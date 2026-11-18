@@ -29,7 +29,7 @@
     advance_request: {
       title: "ADVANCE PAYMENT REQUEST",
       breakfastOnlyTitle: "ADVANCE PAYMENT REQUEST",
-      badgeText: "PRO-FORMA QUOTE",
+      badgeText: "PRO-FORMA QUOTE — ADVANCE REQUIRED",
       badgeClass: "unpaid",
       prefix: "REQ",
       defaultChannel: "Direct Reservation",
@@ -51,6 +51,8 @@
       convertibleTo: null
     }
   };
+
+  const BLANK_GUEST_LINE = "-------------------------------------";
 
   let state = {
     docType: "stay_invoice",
@@ -144,6 +146,19 @@
     return parseFloat(el.sellingRate.value) || VILLA_CONFIG.defaultSellingRate;
   }
 
+  // Check if advance payment applies (either Advance Payment Request OR Direct Reservation Stay-Only Invoice)
+  function requiresAdvanceBreakdown() {
+    if (state.docType === "advance_request") return true;
+    if (
+      state.docType === "stay_invoice" &&
+      el.bookingChannel.value === "Direct Reservation" &&
+      state.billingScope === "room_only"
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   function generateRefNumber() {
     if (el.docRefOverride.value.trim()) return el.docRefOverride.value.trim();
     const cfg = DOC_TYPES[state.docType];
@@ -206,6 +221,7 @@
     el.sellingRate.value = initRate;
     el.bfSellingRate.value = initRate;
     el.breakfastRateLkr.value = VILLA_CONFIG.breakfastPriceLkr;
+    el.advancePercent.value = String(VILLA_CONFIG.defaultAdvancePercent);
 
     addBreakfastRow(todayIso, 2);
     loadHistoryDropdown();
@@ -215,6 +231,7 @@
     const cfg = DOC_TYPES[state.docType];
     const isBreakfastOnly = state.billingScope === "breakfast_only";
     const hasBreakfast = state.billingScope === "room_breakfast" || isBreakfastOnly;
+    const showAdvPct = requiresAdvanceBreakdown();
 
     document.querySelectorAll(".preset-btn").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.type === state.docType);
@@ -229,8 +246,8 @@
     el.bookingNumGroup.style.display = (cfg.showOta && !isBreakfastOnly) ? "block" : "none";
     el.bfSellingRateGroup.style.display = (isBreakfastOnly && state.currencyMode === "USD_ONLY") ? "block" : "none";
 
-    el.advanceSection.style.display = (cfg.showAdvancePct || cfg.showAdvancePaid) ? "flex" : "none";
-    el.advancePercentRow.style.display = cfg.showAdvancePct ? "flex" : "none";
+    el.advanceSection.style.display = (showAdvPct || cfg.showAdvancePaid) ? "flex" : "none";
+    el.advancePercentRow.style.display = showAdvPct ? "flex" : "none";
     el.advancePaidRow.style.display = cfg.showAdvancePaid ? "flex" : "none";
 
     if (cfg.convertibleTo) {
@@ -258,6 +275,7 @@
   function computeFinancials() {
     const isBreakfastOnly = state.billingScope === "breakfast_only";
     const hasBreakfast = state.billingScope === "room_breakfast" || isBreakfastOnly;
+    const hasAdvanceReq = requiresAdvanceBreakdown();
 
     const nights = isBreakfastOnly ? 0 : calcNights(el.checkInDate.value, el.checkOutDate.value);
     const rawVal = isBreakfastOnly ? 0 : (parseFloat(el.priceValue.value) || 0);
@@ -322,7 +340,7 @@
     }
 
     return {
-      isBreakfastOnly, hasBreakfast,
+      isBreakfastOnly, hasBreakfast, hasAdvanceReq,
       nights, rate,
       roomUsd, nightlyUsd, roomLkr, nightlyLkr,
       bfRateLkr, bfTotalGuests, bfTotalLkr, bfTotalUsd, bfLineItems,
@@ -336,12 +354,17 @@
     updateFormVisibility();
     const cfg = DOC_TYPES[state.docType];
     const calc = computeFinancials();
-    const guest = el.guestName.value.trim() || "Guest Name";
+    const rawGuestName = el.guestName.value.trim();
+    const displayGuestName = rawGuestName || BLANK_GUEST_LINE;
     const refNum = generateRefNumber();
 
     // Header & Meta
     const badge = document.getElementById("docBadge");
-    badge.textContent = cfg.badgeText;
+    if (state.docType === "stay_invoice" && calc.hasAdvanceReq) {
+      badge.textContent = `${calc.advPct}% ADVANCE REQUIRED TO CONFIRM`;
+    } else {
+      badge.textContent = cfg.badgeText;
+    }
     badge.className = `status-badge ${cfg.badgeClass}`;
     document.getElementById("docTitle").textContent = calc.isBreakfastOnly ? cfg.breakfastOnlyTitle : cfg.title;
     document.getElementById("viewDocRef").textContent = refNum;
@@ -356,8 +379,8 @@
       bRow.style.display = "none";
     }
 
-    // Guest Card
-    document.getElementById("viewGuestName").textContent = guest;
+    // Guest Card (uses "-------------------------------------" if blank)
+    document.getElementById("viewGuestName").textContent = displayGuestName;
     const country = el.guestCountry.value.trim();
     const cRow = document.getElementById("viewCountryRow");
     if (country) {
@@ -466,6 +489,11 @@
       policyBox.style.background = "#f0f9ff";
       policyBox.style.borderColor = "#bae6fd";
       policyText.textContent = `Advance deposit received. Remaining balance is payable in LKR Cash upon check-in. (${VILLA_CONFIG.cashOnlyNotice})`;
+    } else if (calc.hasAdvanceReq) {
+      policyBox.style.borderLeftColor = "#d97706";
+      policyBox.style.background = "#fffbeb";
+      policyBox.style.borderColor = "#fde68a";
+      policyText.textContent = `A ${calc.advPct}% advance payment is required to confirm your reservation dates. Remaining balance is due at check-in. (${VILLA_CONFIG.cashOnlyNotice})`;
     } else {
       policyBox.style.borderLeftColor = "#d97706";
       policyBox.style.background = "#fffbeb";
@@ -489,7 +517,7 @@
     incBox.innerHTML = incItems.join("<br />");
 
     renderTotalsTable(calc);
-    renderWhatsAppMessage(calc, guest, refNum);
+    renderWhatsAppMessage(calc, rawGuestName, refNum);
   }
 
   function renderTotalsTable(calc) {
@@ -510,8 +538,8 @@
       if (state.docType === "payment_receipt") {
         rows += `<tr class="highlight-row"><td>Paid in Full (LKR Cash)</td><td>LKR ${fmtNum(calc.grandTotalLkr)}</td></tr>`;
         rows += `<tr><td>Balance Due</td><td>LKR 0.00</td></tr>`;
-      } else if (state.docType === "advance_request") {
-        rows += `<tr class="due-row"><td>${calc.advPct}% Advance Requested</td><td>LKR ${fmtNum(calc.reqAdvLkr)} (US$ ${fmtNum(calc.reqAdvUsd)})</td></tr>`;
+      } else if (calc.hasAdvanceReq) {
+        rows += `<tr class="due-row"><td>${calc.advPct}% Advance Required</td><td>LKR ${fmtNum(calc.reqAdvLkr)} (US$ ${fmtNum(calc.reqAdvUsd)})</td></tr>`;
         rows += `<tr><td>Balance at Check-in</td><td>LKR ${fmtNum(calc.reqRemLkr)} (US$ ${fmtNum(calc.reqRemUsd)})</td></tr>`;
       } else if (state.docType === "advance_receipt") {
         rows += `<tr class="highlight-row"><td>Advance Paid</td><td>LKR ${fmtNum(calc.paidLkr)} (US$ ${fmtNum(calc.paidUsd)})</td></tr>`;
@@ -529,8 +557,8 @@
       if (state.docType === "payment_receipt") {
         rows += `<tr class="highlight-row"><td>Paid in Full</td><td>US$ ${fmtNum(calc.grandTotalUsd)}</td></tr>`;
         rows += `<tr><td>Balance Due</td><td>US$ 0.00</td></tr>`;
-      } else if (state.docType === "advance_request") {
-        rows += `<tr class="due-row"><td>${calc.advPct}% Advance Requested</td><td>US$ ${fmtNum(calc.reqAdvUsd)}</td></tr>`;
+      } else if (calc.hasAdvanceReq) {
+        rows += `<tr class="due-row"><td>${calc.advPct}% Advance Required</td><td>US$ ${fmtNum(calc.reqAdvUsd)}</td></tr>`;
         rows += `<tr><td>Balance at Check-in</td><td>US$ ${fmtNum(calc.reqRemUsd)}</td></tr>`;
       } else if (state.docType === "advance_receipt") {
         rows += `<tr class="highlight-row"><td>Advance Paid</td><td>US$ ${fmtNum(calc.paidUsd)}</td></tr>`;
@@ -548,8 +576,8 @@
       if (state.docType === "payment_receipt") {
         rows += `<tr class="highlight-row"><td>Paid in Full (LKR Cash)</td><td>LKR ${fmtNum(calc.grandTotalLkr)}</td></tr>`;
         rows += `<tr><td>Balance Due</td><td>LKR 0.00</td></tr>`;
-      } else if (state.docType === "advance_request") {
-        rows += `<tr class="due-row"><td>${calc.advPct}% Advance Requested</td><td>LKR ${fmtNum(calc.reqAdvLkr)}</td></tr>`;
+      } else if (calc.hasAdvanceReq) {
+        rows += `<tr class="due-row"><td>${calc.advPct}% Advance Required</td><td>LKR ${fmtNum(calc.reqAdvLkr)}</td></tr>`;
         rows += `<tr><td>Balance at Check-in</td><td>LKR ${fmtNum(calc.reqRemLkr)}</td></tr>`;
       } else if (state.docType === "advance_receipt") {
         rows += `<tr class="highlight-row"><td>Advance Paid (LKR)</td><td>LKR ${fmtNum(calc.paidLkr)}</td></tr>`;
@@ -560,14 +588,15 @@
     tbl.innerHTML = rows;
   }
 
-  function renderWhatsAppMessage(calc, guest, refNum) {
-    const firstName = guest.split(" ")[0];
+  function renderWhatsAppMessage(calc, rawGuestName, refNum) {
+    const greetingName = rawGuestName ? rawGuestName.split(" ")[0] : "Guest";
     const inDate = fmtDateDisplay(el.checkInDate.value);
     const outDate = fmtDateDisplay(el.checkOutDate.value);
     const bNum = el.bookingNumber.value.trim();
     const bTag = bNum ? ` (#${bNum})` : "";
     let msg = "";
 
+    // 1. Breakfast-Only Messages
     if (calc.isBreakfastOnly) {
       const bfDatesSummary = calc.bfLineItems
         .map(item => `${fmtDateDisplay(item.date)} (${item.guests} ${item.guests === 1 ? "guest" : "guests"})`)
@@ -577,82 +606,99 @@
         : `*LKR ${fmtNum(calc.grandTotalLkr)}*`;
 
       if (state.docType === "payment_receipt") {
-        msg = `Dear ${firstName}, 🌿✨
+        msg = `Dear ${greetingName}, 🌿✨
 
 ` +
-              `Thank you so much! We have received your cash payment of ${totalStr} for breakfast on *${bfDatesSummary}*.
+              `Thank you so much for your payment! We are pleased to confirm that we have received *${totalStr}* in LKR cash for your breakfast service on *${bfDatesSummary}*.
 
 ` +
-              `Attached is your official breakfast receipt (${refNum}). Enjoy your day at *${VILLA_CONFIG.propertyName}*! ☕🥞🌴`;
+              `Attached is your official payment receipt (${refNum}). We hope you enjoyed your breakfast and wish you a wonderful day ahead at *${VILLA_CONFIG.propertyName}*! ☕🥞🌴`;
       } else {
-        msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${firstName}! 🌿✨
+        msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
 
 ` +
-              `Attached is your breakfast invoice (${refNum}) for *${bfDatesSummary}* at *LKR ${fmtNum(calc.bfRateLkr)} per guest* (Total: ${totalStr}).
+              `Attached is the invoice (${refNum}) for your breakfast service on *${bfDatesSummary}* at *LKR ${fmtNum(calc.bfRateLkr)} per guest* (Total: ${totalStr}).
 
 ` +
-              `Whenever is convenient for you, could you kindly help us settle this in *LKR cash*? Thank you so much! ☕🥞🌴`;
+              `Whenever is most convenient for you, we kindly request that you settle this amount in *LKR cash*, as we currently accept cash payments only. Please let us know if you need anything at all! ☕🥞🌴`;
       }
       el.waPreview.value = msg;
       return;
     }
 
+    // 2. Room Stay / Room + Breakfast Messages tailored by Document Type
     const bfClause = calc.hasBreakfast
-      ? ` + breakfast for ${calc.bfTotalGuests} ${calc.bfTotalGuests === 1 ? "guest" : "guests"} (LKR ${fmtNum(calc.bfTotalLkr)})`
-      : ` (Breakfast is optional at LKR ${fmtNum(calc.bfRateLkr)}/guest)`;
+      ? ` including breakfast for ${calc.bfTotalGuests} ${calc.bfTotalGuests === 1 ? "guest" : "guests"} (LKR ${fmtNum(calc.bfTotalLkr)})`
+      : "";
+
+    const totalAmtStr = state.currencyMode === "LKR"
+      ? `*LKR ${fmtNum(calc.grandTotalLkr)}*`
+      : state.currencyMode === "USD_ONLY"
+      ? `*US$ ${fmtNum(calc.grandTotalUsd)}*`
+      : `*LKR ${fmtNum(calc.grandTotalLkr)}* (US$ ${fmtNum(calc.grandTotalUsd)} at Sampath Bank's USD selling rate of ${fmtNum(calc.rate)} LKR)`;
+
+    const advAmtStr = state.currencyMode === "LKR"
+      ? `*LKR ${fmtNum(calc.reqAdvLkr)}*`
+      : state.currencyMode === "USD_ONLY"
+      ? `*US$ ${fmtNum(calc.reqAdvUsd)}*`
+      : `*US$ ${fmtNum(calc.reqAdvUsd)} (LKR ${fmtNum(calc.reqAdvLkr)})*`;
+
+    const remAmtStr = state.currencyMode === "LKR"
+      ? `*LKR ${fmtNum(calc.reqRemLkr)}*`
+      : state.currencyMode === "USD_ONLY"
+      ? `*US$ ${fmtNum(calc.reqRemUsd)}*`
+      : `*US$ ${fmtNum(calc.reqRemUsd)} (LKR ${fmtNum(calc.reqRemLkr)})*`;
 
     if (state.docType === "stay_invoice") {
-      const amtStr = state.currencyMode === "LKR"
-        ? `*LKR ${fmtNum(calc.grandTotalLkr)}*`
-        : state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.grandTotalUsd)}*`
-        : `*LKR ${fmtNum(calc.grandTotalLkr)}* (US$ ${fmtNum(calc.grandTotalUsd)} at Sampath Bank rate of ${fmtNum(calc.rate)} LKR)`;
-
-      msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${firstName}! 🌿✨
+      if (calc.hasAdvanceReq) {
+        // Direct Reservation Stay-Only Invoice requiring advance deposit
+        msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
 
 ` +
-            `Attached is the stay invoice for your ${el.bookingChannel.value} reservation${bTag} (${inDate} – ${outDate}, ${calc.nights} ${calc.nights === 1 ? "night" : "nights"}${bfClause}) for ${amtStr}.
+              `Thank you for choosing to stay with us from *${inDate}* to *${outDate}* (${calc.nights} ${calc.nights === 1 ? "night" : "nights"}). Attached is your official Stay Invoice (${refNum}) for a total of ${totalAmtStr} (all taxes included).
 
 ` +
-            `Whenever you have a free moment today, could you kindly help us settle the balance in *LKR cash* (as we currently accept cash payments only)? Thank you so much! 😊🌴`;
+              `To confirm and secure your reservation dates, we kindly request a *${calc.advPct}% advance payment of ${advAmtStr}*, with the remaining balance of ${remAmtStr} payable in *LKR cash* upon check-in.
+
+` +
+              `Please let us know once you are ready to proceed, and we will be delighted to assist you. Looking forward to welcoming you to Unawatuna! 😊🌴`;
+      } else {
+        // Standard OTA / Check-in Stay Invoice
+        msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
+
+` +
+              `We hope you are having a wonderful stay with us! Attached is the official Stay Invoice (${refNum}) for your ${el.bookingChannel.value} reservation${bTag} from *${inDate}* to *${outDate}* (${calc.nights} ${calc.nights === 1 ? "night" : "nights"}${bfClause}) for ${totalAmtStr}.
+
+` +
+              `Whenever you have a free moment today, could you kindly help us settle the balance in *LKR cash* (as we currently accept cash payments only)? Thank you so much for your kind cooperation, and please let us know if there is anything we can do to make your stay even more comfortable! 😊🌴`;
+      }
     } else if (state.docType === "payment_receipt") {
       const paidStr = state.currencyMode === "USD_ONLY"
         ? `*US$ ${fmtNum(calc.grandTotalUsd)}*`
         : `*LKR ${fmtNum(calc.grandTotalLkr)}*`;
 
-      msg = `Dear ${firstName}, 🌿✨
+      msg = `Dear ${greetingName}, 🌿✨
 
 ` +
-            `Thank you so much! We have received your full cash payment of ${paidStr} for your stay (${inDate} – ${outDate}).
+            `Thank you so much! We are pleased to confirm that we have received your full cash payment of ${paidStr} for your stay at *${VILLA_CONFIG.propertyName}* (${inDate} – ${outDate}).
 
 ` +
-            `Attached is your official payment receipt (${refNum}). Also, just to help plan your morning, could you let us know roughly what time you're planning to check out (standard check-out is at *${el.checkOutTime.value}*)? 😊🌴`;
+            `Attached is your official Payment Receipt (${refNum}) for your records. Also, to help us plan smoothly for your departure, could you kindly let us know roughly what time you plan to check out (our standard check-out time is *${el.checkOutTime.value}*)? Wishing you safe travels and a wonderful rest of your trip! 😊🌴`;
     } else if (state.docType === "advance_request") {
-      const totalLine = state.currencyMode === "LKR"
-        ? `*LKR ${fmtNum(calc.grandTotalLkr)}*`
-        : state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.grandTotalUsd)}*`
-        : `*US$ ${fmtNum(calc.grandTotalUsd)}* (LKR ${fmtNum(calc.grandTotalLkr)})`;
-
-      const advLine = state.currencyMode === "LKR"
-        ? `*LKR ${fmtNum(calc.reqAdvLkr)}*`
-        : state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.reqAdvUsd)}*`
-        : `*US$ ${fmtNum(calc.reqAdvUsd)} (LKR ${fmtNum(calc.reqAdvLkr)})*`;
-
-      const remLine = state.currencyMode === "LKR"
-        ? `*LKR ${fmtNum(calc.reqRemLkr)}*`
-        : state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.reqRemUsd)}*`
-        : `*US$ ${fmtNum(calc.reqRemUsd)} (LKR ${fmtNum(calc.reqRemLkr)})*`;
-
-      msg = `Hi ${firstName}, 🌿✨
+      msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
 
 ` +
-            `Attached is your booking quote (${refNum}) for *${inDate} – ${outDate}* (${calc.nights} nights = ${totalLine}, all taxes included${bfClause}).
+            `We would be delighted to host you from *${inDate}* to *${outDate}* (${calc.nights} ${calc.nights === 1 ? "night" : "nights"}${bfClause}). Attached is your Advance Payment Request (${refNum}) with the full stay breakdown:
 
 ` +
-            `To confirm your dates, please complete the *${calc.advPct}% advance payment of ${advLine}*, with the remaining ${remLine} due at check-in. Looking forward to welcoming you to *${VILLA_CONFIG.propertyName}*! 😊🌴`;
+            `• *Total Stay Amount:* ${totalAmtStr} *(all taxes & service charges included)*
+` +
+            `• *${calc.advPct}% Advance Deposit Required:* ${advAmtStr}
+` +
+            `• *Remaining Balance at Check-in:* ${remAmtStr} *(payable in LKR cash)*
+
+` +
+            `To lock in your dates, please arrange the *${calc.advPct}% advance payment* at your earliest convenience. Please feel free to reach out if you have any questions—we look forward to welcoming you! 😊🌴`;
     } else if (state.docType === "advance_receipt") {
       const paidLine = state.currencyMode === "USD_ONLY"
         ? `*US$ ${fmtNum(calc.paidUsd)}*`
@@ -666,20 +712,22 @@
         ? `*LKR ${fmtNum(calc.remLkr)}*`
         : `*LKR ${fmtNum(calc.remLkr)}* (US$ ${fmtNum(calc.remUsd)})`;
 
-      msg = `Dear ${firstName}, 🌿✨
+      msg = `Dear ${greetingName}, 🌿✨
 
 ` +
-            `Thank you so much! We have received your advance payment of ${paidLine}. Your reservation at *${VILLA_CONFIG.propertyName}* is officially confirmed!
+            `Thank you so much! We have safely received your advance payment of ${paidLine}, and your reservation at *${VILLA_CONFIG.propertyName}* is now officially confirmed!
 
 ` +
-            `• *Stay Dates:* ${inDate} (Check-in: ${el.checkInTime.value}) – ${outDate} (Check-out: ${el.checkOutTime.value})
+            `• *Check-in:* ${inDate} (from ${el.checkInTime.value})
 ` +
-            `• *Advance Paid:* ${paidLine}
+            `• *Check-out:* ${outDate} (by ${el.checkOutTime.value})
 ` +
-            `• *Remaining Balance:* ${remLine} — payable in *LKR cash* at check-in
+            `• *Advance Received:* ${paidLine}
+` +
+            `• *Remaining Balance:* ${remLine} — payable in *LKR cash* upon check-in
 
 ` +
-            `Attached is your official advance payment receipt (${refNum}). We look forward to welcoming you! 😊🌴`;
+            `Attached is your official Advance Payment Receipt (${refNum}). We truly look forward to welcoming you to Unawatuna! 😊🌴`;
     }
 
     el.waPreview.value = msg;
@@ -834,7 +882,7 @@
     state.breakfastRows = rec.breakfastRows && rec.breakfastRows.length
       ? rec.breakfastRows
       : [{ date: el.checkInDate.value, guests: 2 }];
-    el.advancePercent.value = rec.advancePercent || 30;
+    el.advancePercent.value = String(rec.advancePercent || VILLA_CONFIG.defaultAdvancePercent);
     el.advancePaidLkr.value = rec.advancePaidLkr || "";
     el.checkInTime.value = rec.checkInTime || VILLA_CONFIG.defaultCheckInTime;
     el.checkOutTime.value = rec.checkOutTime || VILLA_CONFIG.defaultCheckOutTime;
@@ -867,6 +915,7 @@
     el.priceValue.value = "";
     el.advancePaidLkr.value = "";
     el.docRefOverride.value = "";
+    el.advancePercent.value = String(VILLA_CONFIG.defaultAdvancePercent);
     el.breakfastRateLkr.value = VILLA_CONFIG.breakfastPriceLkr;
     state.breakfastRows = [{ date: el.checkInDate.value || el.docDate.value, guests: parseDefaultGuestCount() }];
     renderBreakfastInputs();
