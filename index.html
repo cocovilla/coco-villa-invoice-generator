@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coco Villa Unawatuna — Official Invoice & Receipt Generator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Left Control Panel (Hidden on Print) -->
+    <aside class="editor-panel no-print">
+      <header class="editor-header">
+        <div>
+          <h1>Coco Villa Unawatuna</h1>
+          <p>Official Document &amp; PDF Generator</p>
+        </div>
+        <button type="button" id="btnReset" class="btn-ghost" title="Clear Form">Clear Form</button>
+      </header>
+
+      <!-- Step 1: Document Type -->
+      <section class="panel-card">
+        <label class="section-label">1. Document Type</label>
+        <div class="preset-grid" id="presetGrid">
+          <button type="button" class="preset-btn active" data-type="stay_invoice">
+            <span class="preset-title">Stay Invoice</span>
+            <span class="preset-sub">Unpaid Bill</span>
+          </button>
+          <button type="button" class="preset-btn" data-type="payment_receipt">
+            <span class="preset-title">Payment Receipt</span>
+            <span class="preset-sub">Paid in Full</span>
+          </button>
+          <button type="button" class="preset-btn" data-type="advance_request">
+            <span class="preset-title">Advance Request</span>
+            <span class="preset-sub">30% Deposit Quote</span>
+          </button>
+          <button type="button" class="preset-btn" data-type="advance_receipt">
+            <span class="preset-title">Advance Receipt</span>
+            <span class="preset-sub">Deposit Paid</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Quick Convert / Recent History -->
+      <section class="history-section" id="historySection" style="display:none;">
+        <div class="history-bar">
+          <label class="section-label" style="margin:0;">Recent Guests</label>
+          <select id="recentSelect" class="compact-select">
+            <option value="">-- Load saved guest --</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Step 2: Billing Scope -->
+      <form id="docForm" class="doc-form" autocomplete="off">
+        <div class="panel-card">
+          <label class="section-label">2. What Are You Billing?</label>
+          <div class="segmented-control" id="billingScopeToggle">
+            <button type="button" class="seg-btn active" data-scope="room_only">Room Only</button>
+            <button type="button" class="seg-btn" data-scope="room_breakfast">Room + Breakfast</button>
+            <button type="button" class="seg-btn" data-scope="breakfast_only">Breakfast Only</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Guest & Channel -->
+        <div class="panel-card">
+          <label class="section-label">3. Guest &amp; Booking Details</label>
+          <div class="form-row">
+            <div class="field-group flex-2">
+              <label for="guestName">Guest Full Name *</label>
+              <input type="text" id="guestName" placeholder="e.g., Josie Hayday" required />
+            </div>
+            <div class="field-group flex-1">
+              <label for="guestCountry">Country / NIC</label>
+              <input type="text" id="guestCountry" placeholder="e.g., UK" />
+            </div>
+          </div>
+
+          <div class="form-row" id="otaRow">
+            <div class="field-group flex-1">
+              <label for="bookingChannel">Booking Channel</label>
+              <select id="bookingChannel">
+                <option value="Booking.com">Booking.com</option>
+                <option value="Airbnb">Airbnb</option>
+                <option value="Direct Reservation">Direct Reservation</option>
+                <option value="In-House Guest">In-House Guest</option>
+              </select>
+            </div>
+            <div class="field-group flex-1" id="bookingNumGroup">
+              <label for="bookingNumber">Booking / Ref #</label>
+              <input type="text" id="bookingNumber" placeholder="e.g., 6339722931" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Stay Dates & Room Pricing -->
+        <div id="roomStaySection" class="panel-card">
+          <div class="card-header-row">
+            <label class="section-label" style="margin:0;">4. Stay Dates &amp; Room Rate</label>
+            <div class="segmented-control compact" id="currencyToggle">
+              <button type="button" class="curr-btn active" data-curr="USD">USD &rarr; LKR</button>
+              <button type="button" class="curr-btn" data-curr="USD_ONLY">USD Only</button>
+              <button type="button" class="curr-btn" data-curr="LKR">LKR Only</button>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="field-group flex-1">
+              <label for="checkInDate">Check-in Date *</label>
+              <input type="date" id="checkInDate" />
+            </div>
+            <div class="field-group flex-1">
+              <label for="checkOutDate">Check-out Date *</label>
+              <input type="date" id="checkOutDate" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="field-group flex-1">
+              <label for="guestsCount">Guests</label>
+              <input type="text" id="guestsCount" value="2 Adults" />
+            </div>
+            <div class="field-group flex-1">
+              <label for="unitsCount">Rooms / Units</label>
+              <input type="text" id="unitsCount" value="1 Villa Room" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="field-group flex-1" id="priceModeGroup">
+              <label for="priceInputMode">Price Entry Mode</label>
+              <select id="priceInputMode">
+                <option value="total">Total Stay Price</option>
+                <option value="nightly">Per Night Rate</option>
+              </select>
+            </div>
+            <div class="field-group flex-1">
+              <label for="priceValue" id="priceValueLabel">Total Room Price (USD) *</label>
+              <input type="number" id="priceValue" step="0.01" min="0" placeholder="0.00" />
+            </div>
+          </div>
+
+          <div class="form-row" id="exchangeRateRow">
+            <div class="field-group flex-1">
+              <label for="sellingRate">Sampath Bank USD Selling Rate (LKR)</label>
+              <input type="number" id="sellingRate" step="0.01" min="0" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Breakfast Add-on / Breakfast-Only Section -->
+        <div class="panel-card breakfast-card" id="breakfastSection" style="display:none;">
+          <div class="card-header-row">
+            <label class="section-label" style="margin:0;">Breakfast Schedule &amp; Rate</label>
+            <button type="button" id="btnAddBreakfastRow" class="btn-small">+ Add Date</button>
+          </div>
+          <div class="form-row">
+            <div class="field-group flex-1">
+              <label for="breakfastRateLkr">Rate per Guest (LKR)</label>
+              <input type="number" id="breakfastRateLkr" step="1" min="0" />
+            </div>
+            <div class="field-group flex-1" id="bfSellingRateGroup" style="display:none;">
+              <label for="bfSellingRate">USD Selling Rate (LKR)</label>
+              <input type="number" id="bfSellingRate" step="0.01" min="0" />
+            </div>
+          </div>
+          <div id="breakfastRowsContainer" class="bf-rows-container"></div>
+        </div>
+
+        <!-- Advance Request / Paid Box -->
+        <div class="panel-card advance-card" id="advanceSection" style="display:none;">
+          <label class="section-label">Advance Deposit Details</label>
+          <div class="form-row" id="advancePercentRow" style="display:none;">
+            <div class="field-group flex-1">
+              <label for="advancePercent">Required Advance (%)</label>
+              <input type="number" id="advancePercent" value="30" min="1" max="100" />
+            </div>
+          </div>
+          <div class="form-row" id="advancePaidRow" style="display:none;">
+            <div class="field-group flex-1">
+              <label for="advancePaidLkr" id="advancePaidLabel">Actual Advance Paid (LKR) *</label>
+              <input type="number" id="advancePaidLkr" step="0.01" min="0" placeholder="e.g., 35000" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Optional Details Accordion -->
+        <details class="optional-details">
+          <summary>Optional Settings (Check-in/out Times, Doc #, Notes)</summary>
+          <div class="details-body">
+            <div class="form-row">
+              <div class="field-group flex-1">
+                <label for="checkInTime">Check-in Time</label>
+                <input type="text" id="checkInTime" value="12:30 PM" />
+              </div>
+              <div class="field-group flex-1">
+                <label for="checkOutTime">Check-out Time</label>
+                <input type="text" id="checkOutTime" value="10:30 AM" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field-group flex-1">
+                <label for="docRefOverride">Custom Document #</label>
+                <input type="text" id="docRefOverride" placeholder="Auto-generated if blank" />
+              </div>
+              <div class="field-group flex-1">
+                <label for="docDate">Issue Date</label>
+                <input type="date" id="docDate" />
+              </div>
+            </div>
+            <div class="checkbox-row">
+              <label><input type="checkbox" id="optNetflix" checked /> Include Complimentary Netflix note</label>
+              <label><input type="checkbox" id="optShowBreakfastNote" checked /> Show Breakfast per-guest rate on all invoices</label>
+            </div>
+          </div>
+        </details>
+
+        <!-- Primary Action Buttons -->
+        <div class="action-bar">
+          <button type="button" id="btnPrintPdf" class="btn-primary">
+            Download / Save Official PDF
+          </button>
+          <button type="button" id="btnConvertReceipt" class="btn-secondary" style="display:none;">
+            Convert to Receipt &rarr;
+          </button>
+        </div>
+        <p class="print-hint">Tip: In the print dialog, set <strong>Destination: Save as PDF</strong>, <strong>Paper: A4</strong>, and <strong>Margins: None</strong>.</p>
+
+        <!-- WhatsApp Message Box -->
+        <div class="whatsapp-box">
+          <div class="whatsapp-header">
+            <span class="section-label" style="margin:0;">WhatsApp Message for Guest</span>
+            <button type="button" id="btnCopyWa" class="btn-copy">Copy Message</button>
+          </div>
+          <textarea id="waPreview" rows="6" readonly></textarea>
+        </div>
+      </form>
+    </aside>
+
+    <!-- Right Live A4 Document Preview -->
+    <main class="preview-area">
+      <div class="preview-toolbar no-print">
+        <span>Live A4 Official Document Preview</span>
+        <span class="toolbar-badge">A4 Standard (210 &times; 297 mm)</span>
+      </div>
+
+      <div id="a4Sheet" class="a4-sheet">
+        <!-- Top Brand Accent Bar -->
+        <div class="top-accent-bar"></div>
+
+        <div class="sheet-inner">
+          <!-- Official Header -->
+          <header class="doc-header">
+            <div class="brand-block">
+              <img id="docLogo" src="" alt="Coco Villa Unawatuna Logo" class="doc-logo" />
+              <div class="brand-info">
+                <h2 id="propName">COCO VILLA UNAWATUNA</h2>
+                <p class="brand-tagline">Boutique Villa &amp; Tropical Retreat</p>
+                <p id="propAddress" class="brand-contact-line"></p>
+                <p id="propContact" class="brand-contact-line"></p>
+              </div>
+            </div>
+
+            <div class="doc-meta">
+              <h1 id="docTitle" class="doc-title">STAY INVOICE</h1>
+              <div id="docBadge" class="status-badge unpaid">UNPAID &mdash; DUE AT CHECK-IN</div>
+              <table class="meta-table">
+                <tr>
+                  <td class="meta-label">Document No:</td>
+                  <td class="meta-val" id="viewDocRef">&mdash;</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Issue Date:</td>
+                  <td class="meta-val" id="viewIssueDate">&mdash;</td>
+                </tr>
+                <tr id="viewBookingRow">
+                  <td class="meta-label">Booking Ref:</td>
+                  <td class="meta-val" id="viewBookingNum">&mdash;</td>
+                </tr>
+                <tr>
+                  <td class="meta-label">Channel:</td>
+                  <td class="meta-val" id="viewChannel">Booking.com</td>
+                </tr>
+              </table>
+            </div>
+          </header>
+
+          <hr class="header-rule" />
+
+          <!-- Two-Column Structured Info Boxes -->
+          <section class="info-grid">
+            <div class="info-box">
+              <div class="info-box-header">BILLED TO / GUEST INFORMATION</div>
+              <div class="info-box-body">
+                <p class="guest-name-display" id="viewGuestName">Guest Name</p>
+                <table class="mini-kv-table">
+                  <tr id="viewCountryRow">
+                    <td class="kv-key">Nationality / ID:</td>
+                    <td class="kv-val" id="viewGuestCountry">&mdash;</td>
+                  </tr>
+                  <tr>
+                    <td class="kv-key">Occupancy:</td>
+                    <td class="kv-val" id="viewGuestsUnits">2 Adults &bull; 1 Villa Room</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="info-box" id="scheduleCard">
+              <div class="info-box-header" id="scheduleCardTitle">RESERVATION SCHEDULE</div>
+              <div class="info-box-body" id="scheduleCardBody"></div>
+            </div>
+          </section>
+
+          <!-- Official Itemized Ledger Table -->
+          <section class="table-section">
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th style="width: 50%;">DESCRIPTION</th>
+                  <th class="num-col" style="width: 14%;">QTY</th>
+                  <th class="num-col" style="width: 18%;">UNIT RATE</th>
+                  <th class="num-col" style="width: 18%;">AMOUNT</th>
+                </tr>
+              </thead>
+              <tbody id="itemsBody">
+                <!-- Populated dynamically by app.js -->
+              </tbody>
+            </table>
+          </section>
+
+          <!-- Summary & Payment Terms Grid -->
+          <section class="summary-grid">
+            <div class="terms-col">
+              <div class="policy-card" id="viewPolicyBox">
+                <div class="policy-title">PAYMENT TERMS &amp; POLICY</div>
+                <p id="viewPolicyText"></p>
+              </div>
+              <div class="amenities-card" id="viewInclusionsBox"></div>
+            </div>
+
+            <div class="totals-col">
+              <table class="totals-table" id="totalsTable">
+                <!-- Populated dynamically by app.js -->
+              </table>
+            </div>
+          </section>
+
+          <!-- Official Sign-Off & Footer -->
+          <footer class="doc-footer">
+            <div class="signoff-row">
+              <div class="thank-you-note">
+                <strong>Thank you for choosing Coco Villa Unawatuna.</strong>
+                <span>We look forward to making your stay in Sri Lanka memorable.</span>
+              </div>
+              <div class="auth-block">
+                <div class="auth-line"></div>
+                <span>Authorized Management</span>
+              </div>
+            </div>
+            <div class="footer-bar" id="footerSub"></div>
+          </footer>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
