@@ -81,6 +81,8 @@
     priceValueLabel: document.getElementById("priceValueLabel"),
     exchangeRateRow: document.getElementById("exchangeRateRow"),
     sellingRate: document.getElementById("sellingRate"),
+    breakfastIncludedRow: document.getElementById("breakfastIncludedRow"),
+    optBreakfastIncluded: document.getElementById("optBreakfastIncluded"),
     breakfastSection: document.getElementById("breakfastSection"),
     breakfastRateLkr: document.getElementById("breakfastRateLkr"),
     bfSellingRateGroup: document.getElementById("bfSellingRateGroup"),
@@ -242,6 +244,7 @@
     });
 
     el.roomStaySection.style.display = isBreakfastOnly ? "none" : "flex";
+    el.breakfastIncludedRow.style.display = state.billingScope === "room_only" ? "flex" : "none";
     el.breakfastSection.style.display = hasBreakfast ? "flex" : "none";
     el.bookingNumGroup.style.display = (cfg.showOta && !isBreakfastOnly) ? "block" : "none";
     el.bfSellingRateGroup.style.display = (isBreakfastOnly && state.currencyMode === "USD_ONLY") ? "block" : "none";
@@ -275,6 +278,7 @@
   function computeFinancials() {
     const isBreakfastOnly = state.billingScope === "breakfast_only";
     const hasBreakfast = state.billingScope === "room_breakfast" || isBreakfastOnly;
+    const isBreakfastIncluded = state.billingScope === "room_only" && el.optBreakfastIncluded.checked;
     const hasAdvanceReq = requiresAdvanceBreakdown();
 
     const nights = isBreakfastOnly ? 0 : calcNights(el.checkInDate.value, el.checkOutDate.value);
@@ -340,7 +344,7 @@
     }
 
     return {
-      isBreakfastOnly, hasBreakfast, hasAdvanceReq,
+      isBreakfastOnly, hasBreakfast, isBreakfastIncluded, hasAdvanceReq,
       nights, rate,
       roomUsd, nightlyUsd, roomLkr, nightlyLkr,
       bfRateLkr, bfTotalGuests, bfTotalLkr, bfTotalUsd, bfLineItems,
@@ -430,7 +434,11 @@
     let rowsHtml = "";
 
     if (!calc.isBreakfastOnly) {
-      const mealLabel = calc.hasBreakfast ? "Room + Breakfast Plan" : "Room Only";
+      const mealLabel = calc.hasBreakfast
+        ? "Room + Breakfast Plan"
+        : calc.isBreakfastIncluded
+        ? "Bed & Breakfast (Breakfast Included)"
+        : "Room Only";
       const rateDisplay = state.currencyMode === "LKR"
         ? `LKR ${fmtNum(calc.nightlyLkr)}`
         : `US$ ${fmtNum(calc.nightlyUsd)}`;
@@ -505,7 +513,9 @@
     if (el.optNetflix.checked && !calc.isBreakfastOnly) {
       incItems.push("✓ Complimentary Netflix included in room");
     }
-    if (el.optShowBreakfastNote.checked) {
+    if (calc.isBreakfastIncluded) {
+      incItems.push("✓ Complimentary Fresh Villa Breakfast included");
+    } else if (el.optShowBreakfastNote.checked) {
       if (calc.hasBreakfast) {
         incItems.push(`✓ Breakfast Rate Applied: LKR ${fmtNum(calc.bfRateLkr)} per guest`);
       } else {
@@ -564,367 +574,4 @@
         rows += `<tr class="highlight-row"><td>Advance Paid</td><td>US$ ${fmtNum(calc.paidUsd)}</td></tr>`;
         rows += `<tr class="due-row"><td>Remaining Balance Due</td><td>US$ ${fmtNum(calc.remUsd)}</td></tr>`;
       }
-    } else {
-      if (!calc.isBreakfastOnly && calc.hasBreakfast) {
-        rows += `<tr><td>Room Subtotal (LKR)</td><td>LKR ${fmtNum(calc.roomLkr)}</td></tr>`;
-      }
-      if (calc.hasBreakfast) {
-        rows += `<tr><td>Breakfast (${calc.bfTotalGuests} ${calc.bfTotalGuests === 1 ? "Guest" : "Guests"})</td><td>LKR ${fmtNum(calc.bfTotalLkr)}</td></tr>`;
-      }
-      rows += `<tr class="grand-total"><td>TOTAL AMOUNT (LKR)</td><td>LKR ${fmtNum(calc.grandTotalLkr)}</td></tr>`;
-
-      if (state.docType === "payment_receipt") {
-        rows += `<tr class="highlight-row"><td>Paid in Full (LKR Cash)</td><td>LKR ${fmtNum(calc.grandTotalLkr)}</td></tr>`;
-        rows += `<tr><td>Balance Due</td><td>LKR 0.00</td></tr>`;
-      } else if (calc.hasAdvanceReq) {
-        rows += `<tr class="due-row"><td>${calc.advPct}% Advance Required</td><td>LKR ${fmtNum(calc.reqAdvLkr)}</td></tr>`;
-        rows += `<tr><td>Balance at Check-in</td><td>LKR ${fmtNum(calc.reqRemLkr)}</td></tr>`;
-      } else if (state.docType === "advance_receipt") {
-        rows += `<tr class="highlight-row"><td>Advance Paid (LKR)</td><td>LKR ${fmtNum(calc.paidLkr)}</td></tr>`;
-        rows += `<tr class="due-row"><td>Remaining Balance Due</td><td>LKR ${fmtNum(calc.remLkr)}</td></tr>`;
-      }
-    }
-
-    tbl.innerHTML = rows;
-  }
-
-  function renderWhatsAppMessage(calc, rawGuestName, refNum) {
-    const greetingName = rawGuestName ? rawGuestName.split(" ")[0] : "Guest";
-    const inDate = fmtDateDisplay(el.checkInDate.value);
-    const outDate = fmtDateDisplay(el.checkOutDate.value);
-    const bNum = el.bookingNumber.value.trim();
-    const bTag = bNum ? ` (#${bNum})` : "";
-    let msg = "";
-
-    // 1. Breakfast-Only Messages
-    if (calc.isBreakfastOnly) {
-      const bfDatesSummary = calc.bfLineItems
-        .map(item => `${fmtDateDisplay(item.date)} (${item.guests} ${item.guests === 1 ? "guest" : "guests"})`)
-        .join(", ");
-      const totalStr = state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.grandTotalUsd)}*`
-        : `*LKR ${fmtNum(calc.grandTotalLkr)}*`;
-
-      if (state.docType === "payment_receipt") {
-        msg = `Dear ${greetingName}, 🌿✨
-
-` +
-              `Thank you so much for your payment! We are pleased to confirm that we have received *${totalStr}* in LKR cash for your breakfast service on *${bfDatesSummary}*.
-
-` +
-              `Attached is your official payment receipt (${refNum}). We hope you enjoyed your breakfast and wish you a wonderful day ahead at *${VILLA_CONFIG.propertyName}*! ☕🥞🌴`;
-      } else {
-        msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
-
-` +
-              `Attached is the invoice (${refNum}) for your breakfast service on *${bfDatesSummary}* at *LKR ${fmtNum(calc.bfRateLkr)} per guest* (Total: ${totalStr}).
-
-` +
-              `Whenever is most convenient for you, we kindly request that you settle this amount in *LKR cash*, as we currently accept cash payments only. Please let us know if you need anything at all! ☕🥞🌴`;
-      }
-      el.waPreview.value = msg;
-      return;
-    }
-
-    // 2. Room Stay / Room + Breakfast Messages tailored by Document Type
-    const bfClause = calc.hasBreakfast
-      ? ` including breakfast for ${calc.bfTotalGuests} ${calc.bfTotalGuests === 1 ? "guest" : "guests"} (LKR ${fmtNum(calc.bfTotalLkr)})`
-      : "";
-
-    const totalAmtStr = state.currencyMode === "LKR"
-      ? `*LKR ${fmtNum(calc.grandTotalLkr)}*`
-      : state.currencyMode === "USD_ONLY"
-      ? `*US$ ${fmtNum(calc.grandTotalUsd)}*`
-      : `*LKR ${fmtNum(calc.grandTotalLkr)}* (US$ ${fmtNum(calc.grandTotalUsd)} at Sampath Bank's USD selling rate of ${fmtNum(calc.rate)} LKR)`;
-
-    const advAmtStr = state.currencyMode === "LKR"
-      ? `*LKR ${fmtNum(calc.reqAdvLkr)}*`
-      : state.currencyMode === "USD_ONLY"
-      ? `*US$ ${fmtNum(calc.reqAdvUsd)}*`
-      : `*US$ ${fmtNum(calc.reqAdvUsd)} (LKR ${fmtNum(calc.reqAdvLkr)})*`;
-
-    const remAmtStr = state.currencyMode === "LKR"
-      ? `*LKR ${fmtNum(calc.reqRemLkr)}*`
-      : state.currencyMode === "USD_ONLY"
-      ? `*US$ ${fmtNum(calc.reqRemUsd)}*`
-      : `*US$ ${fmtNum(calc.reqRemUsd)} (LKR ${fmtNum(calc.reqRemLkr)})*`;
-
-    if (state.docType === "stay_invoice") {
-      if (calc.hasAdvanceReq) {
-        // Direct Reservation Stay-Only Invoice requiring advance deposit
-        msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
-
-` +
-              `Thank you for choosing to stay with us from *${inDate}* to *${outDate}* (${calc.nights} ${calc.nights === 1 ? "night" : "nights"}). Attached is your official Stay Invoice (${refNum}) for a total of ${totalAmtStr} (all taxes included).
-
-` +
-              `To confirm and secure your reservation dates, we kindly request a *${calc.advPct}% advance payment of ${advAmtStr}*, with the remaining balance of ${remAmtStr} payable in *LKR cash* upon check-in.
-
-` +
-              `Please let us know once you are ready to proceed, and we will be delighted to assist you. Looking forward to welcoming you to Unawatuna! 😊🌴`;
-      } else {
-        // Standard OTA / Check-in Stay Invoice
-        msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
-
-` +
-              `We hope you are having a wonderful stay with us! Attached is the official Stay Invoice (${refNum}) for your ${el.bookingChannel.value} reservation${bTag} from *${inDate}* to *${outDate}* (${calc.nights} ${calc.nights === 1 ? "night" : "nights"}${bfClause}) for ${totalAmtStr}.
-
-` +
-              `Whenever you have a free moment today, could you kindly help us settle the balance in *LKR cash* (as we currently accept cash payments only)? Thank you so much for your kind cooperation, and please let us know if there is anything we can do to make your stay even more comfortable! 😊🌴`;
-      }
-    } else if (state.docType === "payment_receipt") {
-      const paidStr = state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.grandTotalUsd)}*`
-        : `*LKR ${fmtNum(calc.grandTotalLkr)}*`;
-
-      msg = `Dear ${greetingName}, 🌿✨
-
-` +
-            `Thank you so much! We are pleased to confirm that we have received your full cash payment of ${paidStr} for your stay at *${VILLA_CONFIG.propertyName}* (${inDate} – ${outDate}).
-
-` +
-            `Attached is your official Payment Receipt (${refNum}) for your records. Also, to help us plan smoothly for your departure, could you kindly let us know roughly what time you plan to check out (our standard check-out time is *${el.checkOutTime.value}*)? Wishing you safe travels and a wonderful rest of your trip! 😊🌴`;
-    } else if (state.docType === "advance_request") {
-      msg = `Warm greetings from *${VILLA_CONFIG.propertyName}*, ${greetingName}! 🌿✨
-
-` +
-            `We would be delighted to host you from *${inDate}* to *${outDate}* (${calc.nights} ${calc.nights === 1 ? "night" : "nights"}${bfClause}). Attached is your Advance Payment Request (${refNum}) with the full stay breakdown:
-
-` +
-            `• *Total Stay Amount:* ${totalAmtStr} *(all taxes & service charges included)*
-` +
-            `• *${calc.advPct}% Advance Deposit Required:* ${advAmtStr}
-` +
-            `• *Remaining Balance at Check-in:* ${remAmtStr} *(payable in LKR cash)*
-
-` +
-            `To lock in your dates, please arrange the *${calc.advPct}% advance payment* at your earliest convenience. Please feel free to reach out if you have any questions—we look forward to welcoming you! 😊🌴`;
-    } else if (state.docType === "advance_receipt") {
-      const paidLine = state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.paidUsd)}*`
-        : state.currencyMode === "LKR"
-        ? `*LKR ${fmtNum(calc.paidLkr)}*`
-        : `*LKR ${fmtNum(calc.paidLkr)}* (US$ ${fmtNum(calc.paidUsd)})`;
-
-      const remLine = state.currencyMode === "USD_ONLY"
-        ? `*US$ ${fmtNum(calc.remUsd)}*`
-        : state.currencyMode === "LKR"
-        ? `*LKR ${fmtNum(calc.remLkr)}*`
-        : `*LKR ${fmtNum(calc.remLkr)}* (US$ ${fmtNum(calc.remUsd)})`;
-
-      msg = `Dear ${greetingName}, 🌿✨
-
-` +
-            `Thank you so much! We have safely received your advance payment of ${paidLine}, and your reservation at *${VILLA_CONFIG.propertyName}* is now officially confirmed!
-
-` +
-            `• *Check-in:* ${inDate} (from ${el.checkInTime.value})
-` +
-            `• *Check-out:* ${outDate} (by ${el.checkOutTime.value})
-` +
-            `• *Advance Received:* ${paidLine}
-` +
-            `• *Remaining Balance:* ${remLine} — payable in *LKR cash* upon check-in
-
-` +
-            `Attached is your official Advance Payment Receipt (${refNum}). We truly look forward to welcoming you to Unawatuna! 😊🌴`;
-    }
-
-    el.waPreview.value = msg;
-  }
-
-  // Save & Load Recent Guest Records
-  function saveCurrentRecord() {
-    const guest = el.guestName.value.trim();
-    if (!guest) return;
-    const record = {
-      id: Date.now(),
-      docType: state.docType,
-      billingScope: state.billingScope,
-      currencyMode: state.currencyMode,
-      guestName: guest,
-      guestCountry: el.guestCountry.value,
-      bookingChannel: el.bookingChannel.value,
-      bookingNumber: el.bookingNumber.value,
-      checkInDate: el.checkInDate.value,
-      checkOutDate: el.checkOutDate.value,
-      guestsCount: el.guestsCount.value,
-      unitsCount: el.unitsCount.value,
-      priceInputMode: el.priceInputMode.value,
-      priceValue: el.priceValue.value,
-      sellingRate: el.sellingRate.value,
-      breakfastRateLkr: el.breakfastRateLkr.value,
-      breakfastRows: JSON.parse(JSON.stringify(state.breakfastRows)),
-      advancePercent: el.advancePercent.value,
-      advancePaidLkr: el.advancePaidLkr.value,
-      checkInTime: el.checkInTime.value,
-      checkOutTime: el.checkOutTime.value
-    };
-
-    localStorage.setItem("coco_selling_rate", el.sellingRate.value);
-    let history = JSON.parse(localStorage.getItem("coco_doc_history") || "[]");
-    history = history.filter(item => !(item.guestName === guest && item.checkInDate === record.checkInDate && item.billingScope === record.billingScope));
-    history.unshift(record);
-    history = history.slice(0, 12);
-    localStorage.setItem("coco_doc_history", JSON.stringify(history));
-    loadHistoryDropdown();
-  }
-
-  function loadHistoryDropdown() {
-    const history = JSON.parse(localStorage.getItem("coco_doc_history") || "[]");
-    if (history.length === 0) {
-      el.historySection.style.display = "none";
-      return;
-    }
-    el.historySection.style.display = "block";
-    el.recentSelect.innerHTML = `<option value="">-- Load saved guest (${history.length}) --</option>`;
-    history.forEach((item, idx) => {
-      const opt = document.createElement("option");
-      opt.value = idx;
-      const tag = item.billingScope === "breakfast_only" ? " [Breakfast]" : "";
-      opt.textContent = `${item.guestName}${tag} (${item.checkInDate})`;
-      el.recentSelect.appendChild(opt);
-    });
-  }
-
-  // Event Listeners
-  el.presetGrid.addEventListener("click", (e) => {
-    const btn = e.target.closest(".preset-btn");
-    if (!btn) return;
-    state.docType = btn.dataset.type;
-    if (state.billingScope !== "breakfast_only") {
-      el.bookingChannel.value = DOC_TYPES[state.docType].defaultChannel;
-    }
-    renderPreview();
-  });
-
-  el.billingScopeToggle.addEventListener("click", (e) => {
-    const btn = e.target.closest(".seg-btn");
-    if (!btn) return;
-    state.billingScope = btn.dataset.scope;
-    if (state.billingScope === "breakfast_only") {
-      el.bookingChannel.value = "In-House Guest";
-      if (state.currencyMode === "USD") {
-        state.currencyMode = "LKR";
-      }
-    }
-    renderPreview();
-  });
-
-  el.currencyToggle.addEventListener("click", (e) => {
-    const btn = e.target.closest(".curr-btn");
-    if (!btn) return;
-    state.currencyMode = btn.dataset.curr;
-    renderPreview();
-  });
-
-  el.btnAddBreakfastRow.addEventListener("click", () => {
-    const lastRow = state.breakfastRows[state.breakfastRows.length - 1];
-    let nextDate = el.checkInDate.value || el.docDate.value;
-    if (lastRow && lastRow.date) {
-      const [y, m, d] = lastRow.date.split("-").map(Number);
-      const dt = new Date(y, m - 1, d + 1);
-      nextDate = dt.toISOString().slice(0, 10);
-    }
-    addBreakfastRow(nextDate, lastRow ? lastRow.guests : parseDefaultGuestCount());
-    renderPreview();
-  });
-
-  el.breakfastRowsContainer.addEventListener("input", (e) => {
-    const idx = e.target.dataset.idx;
-    if (idx === undefined) return;
-    if (e.target.classList.contains("bf-date-input")) {
-      state.breakfastRows[Number(idx)].date = e.target.value;
-    } else if (e.target.classList.contains("bf-guests-input")) {
-      state.breakfastRows[Number(idx)].guests = parseInt(e.target.value, 10) || 0;
-    }
-    renderPreview();
-  });
-
-  el.breakfastRowsContainer.addEventListener("click", (e) => {
-    const btn = e.target.closest(".btn-remove-row");
-    if (!btn) return;
-    const idx = Number(btn.dataset.idx);
-    state.breakfastRows.splice(idx, 1);
-    renderBreakfastInputs();
-    renderPreview();
-  });
-
-  el.btnConvertReceipt.addEventListener("click", () => {
-    const nextType = DOC_TYPES[state.docType].convertibleTo;
-    if (!nextType) return;
-    state.docType = nextType;
-    renderPreview();
-  });
-
-  el.recentSelect.addEventListener("change", () => {
-    const idx = el.recentSelect.value;
-    if (idx === "") return;
-    const history = JSON.parse(localStorage.getItem("coco_doc_history") || "[]");
-    const rec = history[Number(idx)];
-    if (!rec) return;
-
-    state.docType = rec.docType || "stay_invoice";
-    state.billingScope = rec.billingScope || "room_only";
-    state.currencyMode = rec.currencyMode || "USD";
-    el.guestName.value = rec.guestName || "";
-    el.guestCountry.value = rec.guestCountry || "";
-    el.bookingChannel.value = rec.bookingChannel || "Booking.com";
-    el.bookingNumber.value = rec.bookingNumber || "";
-    el.checkInDate.value = rec.checkInDate || "";
-    el.checkOutDate.value = rec.checkOutDate || "";
-    el.guestsCount.value = rec.guestsCount || "2 Adults";
-    el.unitsCount.value = rec.unitsCount || "1 Villa Room";
-    el.priceInputMode.value = rec.priceInputMode || "total";
-    el.priceValue.value = rec.priceValue || "";
-    el.sellingRate.value = rec.sellingRate || VILLA_CONFIG.defaultSellingRate;
-    el.breakfastRateLkr.value = rec.breakfastRateLkr !== undefined ? rec.breakfastRateLkr : VILLA_CONFIG.breakfastPriceLkr;
-    state.breakfastRows = rec.breakfastRows && rec.breakfastRows.length
-      ? rec.breakfastRows
-      : [{ date: el.checkInDate.value, guests: 2 }];
-    el.advancePercent.value = String(rec.advancePercent || VILLA_CONFIG.defaultAdvancePercent);
-    el.advancePaidLkr.value = rec.advancePaidLkr || "";
-    el.checkInTime.value = rec.checkInTime || VILLA_CONFIG.defaultCheckInTime;
-    el.checkOutTime.value = rec.checkOutTime || VILLA_CONFIG.defaultCheckOutTime;
-    renderBreakfastInputs();
-    renderPreview();
-  });
-
-  el.btnPrintPdf.addEventListener("click", () => {
-    saveCurrentRecord();
-    const guestClean = (el.guestName.value.trim() || "Guest").replace(/[^a-zA-Z0-9]/g, "_");
-    const origTitle = document.title;
-    document.title = `${DOC_TYPES[state.docType].prefix}_${guestClean}`;
-    window.print();
-    document.title = origTitle;
-  });
-
-  el.btnCopyWa.addEventListener("click", () => {
-    saveCurrentRecord();
-    el.waPreview.select();
-    navigator.clipboard.writeText(el.waPreview.value);
-    const orig = el.btnCopyWa.textContent;
-    el.btnCopyWa.textContent = "Copied! ✓";
-    setTimeout(() => { el.btnCopyWa.textContent = orig; }, 1800);
-  });
-
-  el.btnReset.addEventListener("click", () => {
-    el.guestName.value = "";
-    el.guestCountry.value = "";
-    el.bookingNumber.value = "";
-    el.priceValue.value = "";
-    el.advancePaidLkr.value = "";
-    el.docRefOverride.value = "";
-    el.advancePercent.value = String(VILLA_CONFIG.defaultAdvancePercent);
-    el.breakfastRateLkr.value = VILLA_CONFIG.breakfastPriceLkr;
-    state.breakfastRows = [{ date: el.checkInDate.value || el.docDate.value, guests: parseDefaultGuestCount() }];
-    renderBreakfastInputs();
-    renderPreview();
-  });
-
-  document.getElementById("docForm").addEventListener("input", renderPreview);
-  document.getElementById("docForm").addEventListener("change", renderPreview);
-
-  initBranding();
-  renderPreview();
-})();
+    } else
